@@ -53,7 +53,7 @@ function run(){
             if(cfg.save_path && cfg.save_path !== ''){
                 var file_out = {
                     generated: (new Date()).getTime(),
-                    kw: cfg.kw,
+                    cfg: cfg,
                     data: sortedWord,
                 };
                 fs.writeFileSync(cfg.save_path, JSON.stringify(file_out));
