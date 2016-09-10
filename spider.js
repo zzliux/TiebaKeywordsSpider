@@ -68,7 +68,7 @@ function setArgument(){
         if(args[i] == 'kw'){
             cfg[args[i]] = [args[i+1]];
         }else{
-            cfg[args[i]] = args[i+1];
+            cfg[args[i]] = parseInt(args[i+1]);
         }
     }
     return true;
@@ -206,4 +206,3 @@ function word_static(text){
         }
     }
 }
-
