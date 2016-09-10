@@ -1,107 +1,209 @@
+"use strict";
+var debug = require('debug')('spider');
+var request = require('request');
 var Segment = require('segment');
 var segment = new Segment();
-var req = require('superagent');
-var fs = require('fs');
-var cfg = require('./config');
 
-var kw = cfg.kw;
-var savePath = cfg.savePath;
-var isQueue = cfg.isQueue;
-var maxPage = cfg.maxPage;
-
-console.log('Loading Dictory dictionary');
+/* 初始化分词引擎，有点久 */
+debug('Loading directory...');
 segment
-	.use('WildcardTokenizer')       // 通配符，必须在标点符号识别之前
-	.use('DictTokenizer')           // 词典识别
-	.use('ChsNameTokenizer')        // 人名识别，建议在词典识别之后
-	.use('ChsNameOptimizer')        // 人名识别优化
-	.use('DictOptimizer')           // 词典识别优化
-	.loadDict('dict.txt')           // 盘古词典
-	.loadDict('dict2.txt')          // 扩展词典（用于调整原盘古词典）
-	.loadDict('names.txt')          // 常见名词、人名
+    .use('WildcardTokenizer')       // 通配符，必须在标点符号识别之前
+    .use('DictTokenizer')           // 词典识别
+    .use('ChsNameTokenizer')        // 人名识别，建议在词典识别之后
+    .use('ChsNameOptimizer')        // 人名识别优化
+    .use('DictOptimizer')           // 词典识别优化
+    .loadDict('dict.txt')           // 盘古词典
+    .loadDict('dict2.txt')          // 扩展词典（用于调整原盘古词典）
+    .loadDict('names.txt')          // 常见名词、人名
 ;
 
-var startTime = (new Date()).getTime();
 
+//push栈操作, unshift队列操作
+//定义队列
+var queue = {
+    kwPage: [], //贴吧翻页队列
+    pPage: [], //翻页贴子队列
+};
 
-var url = 'http://tieba.baidu.com/f?kw=' + encodeURI(kw);
+var cfg = {};
+
 var word = {};
-var edLength = 0;
 
 
-req.get(url).end(function(err, res){
-	if(err){
-		console.log('err');
-	}else{
-		var reg = /<a href="(\/p\/\d+?)"/g;
-		var r = [];
-		while(reg.exec(res.text)){
-			r.push('http://tieba.baidu.com' + RegExp.$1);
-		}
-		statistic(0);
-		function statistic(i){
-			if(i >= r.length) {
-				return;
-			}else{
-				console.log('Crawling(' + i + '):' + r[i]);
-				req.get(r[i]).end(function(err2, res2){
-					if(err2){
-						console.log(err2.message);
-						statistic(i+1);
-						return;
-					}
-					edLength++;
-					/* 翻页爬取 */
-					var reg3 = /<a href="\/p\/(\d+?)\?pn=(\d+?)">下一页<\/a>/;
-					if(reg3.exec(res2.text) && RegExp.$2 < maxPage){
-						r.push('http://tieba.baidu.com/p/'+RegExp.$1+'?pn=' + RegExp.$2);
-						console.log('Add page:' + '/p/'+RegExp.$1+'?pn=' + RegExp.$2 + ',Queue length:' + (r.length - edLength));
-						statistic(r.length - 1);
-					}
+run();
 
-					/* 帖子内容爬取 */
-					var r2 = [];
-					var reg2 = /<div id="post_content_\d+".+?>(.+?)<\/div>/g;
-					while(reg2.exec(res2.text)){
-						// if(RegExp.$1.length > 500) continue;
-						var arr_t = (RegExp.$1).replace(/(<br>)|(<img.+?>)|[ ]/g,',').split(/[^\u4e00-\u9fa5]+/);
-						for(var j=0; j<arr_t.length; j++){
-							if(arr_t[j].length > 1 && arr_t[j].length < 50){
-								r2.push(arr_t[j]);
-							}
-						}
-					}
-					for(var j=0; j<r2.length; j++){
-						var result = segment.doSegment(r2[j],{
-							stripPunctuation:true,
-						});
-						for(var k=0; k<result.length; k++){
-							//去除单字符和纯数字和数量词
-							if(    result[k].w.length<2
-								|| result[k].w.match(/^\d+$/)
-								|| result[k].p === 0x200000) continue;
-							word[result[k].w] = word[result[k].w] ? word[result[k].w]+1 : 1;
-						}
-					}
-					if(edLength >= r.length){
-						fs.writeFile(savePath + kw +'.kw',JSON.stringify(word),{encoding:'UTF-8',flag:'w+'},function(){
-							console.log('over!');
-							var endTime = (new Date()).getTime();
-							console.log('Crawling time:' + (endTime - startTime)/1000 + 's');
-							var out = require('./show');
-							var outPath = savePath + kw + '(' +  (new Date()).getTime() + ').info';
-							fs.writeFile(outPath, JSON.stringify(out), {encoding:'UTF-8',flag:'w+'}, function(){
-								console.log('Writed to path(' + outPath + ') success!');
-							});
-						});
-					}
-					console.log('Over(' + i + '),Queue length:' + (r.length - edLength));
-					if(isQueue)
-						statistic(i+1);
-				});
-				if(!isQueue)
-					statistic(i+1);
-			}
-		}
-	}
-});
+/**
+* 入口
+*/
+function run(){
+    if(!setArgument()) return ;
+
+    for(let i=0; i<cfg.kw.length; i++){
+        for(let j=0; j<cfg.kwMaxPage; j++){
+            push_kwPage(encodeURI(cfg.kw[i]), j*50);
+        }
+    }
+    grab_p_url(function(){
+        // console.log(queue);
+        grab_p_word(function(){
+            /* 排序 */
+            var wordIndex = Object.keys(word).sort(function(a,b){return word[b]-word[a]});
+            var sortedWord = {};
+            for(let i=0; i<wordIndex.length; i++){
+                sortedWord[wordIndex[i]] = word[wordIndex[i]];
+            }
+            console.log(JSON.stringify(sortedWord));
+        });
+    });
+}
+
+function setArgument(){
+    cfg = require('./config');
+    var args = process.argv.splice(2);
+    if(args.length%2){
+        console.log('arguments error');
+        return false;
+    }
+    for(let i=0; i<args.length; i+=2){
+        if(args[i] == 'kw'){
+            cfg[args[i]] = [args[i+1]];
+        }else{
+            cfg[args[i]] = args[i+1];
+        }
+    }
+    return true;
+}
+
+
+
+/**
+* 传入的pn和贴吧参数一致，第一页为0，第二页为50，第三页为100
+* kw 为uriencode后的
+*/
+function push_kwPage(kw, pn){
+    queue.kwPage.unshift('http://tieba.baidu.com/f?kw='+ kw +'&ie=utf-8&pn=' + pn);
+}
+
+/**
+* 传入的pn和贴子参数一致,第一页为1,第二页为2
+*/
+function push_pPage(pid, pn){
+    queue.pPage.unshift('http://tieba.baidu.com/p/' + pid + '?pn=' + pn);
+}
+
+
+/**
+* 从贴吧页面队列爬贴子链接加入pPage队列
+*/
+function grab_p_url(callback){
+    var left = queue.kwPage.length;
+    var total_num = left;
+    var fail_num = 0;
+    var cnt = 0;
+    while(queue.kwPage.length > 0){
+        var url = queue.kwPage.pop();
+        (function(url){
+            setTimeout(function(){
+                (function (url){
+                    request(url, {timeout: cfg.timeout }, function(err, httpRes, body){
+                        left--;
+                        if(err){
+                            fail_num++;
+                            // console.log(err);
+                        }
+                        var reg = /<a href="\/p\/(\d+)/g;
+                        while(reg.exec(body)){
+                            push_pPage(RegExp.$1, 1);
+                        }
+                        /* 异步工作全部完成 */
+                        if(left === 0){
+                            callback();
+                        }
+                    });
+                })(url)
+            }, (cnt++) * cfg.requestDelay);
+        })(url)
+    }
+}
+
+
+
+/**
+* 抓取贴子内页队列的翻页链接并加入pPage队列
+* 和post_content的每层楼的贴子内容并分词进行统计
+*/
+function grab_p_word(callback){
+    var total_num = queue.pPage.length;
+    var fail_num = 0;
+    var success_num = 0;
+    var cnt = 0;
+    (function _run(){
+        var url = queue.pPage.pop();
+        request(url, {timeout: cfg.timeout }, function(err, httpRes, body){
+            if(err){
+                fail_num++;
+                debug(err);
+            }else{
+                success_num++;
+            }
+
+            /* 翻页队列push */
+            var reg = /<a href="\/p\/(\d+?)\?pn=(\d+?)">下一页<\/a>/;
+            if(reg.exec(body)){
+                if(parseInt(RegExp.$2) <= cfg.pMaxPage){
+                    debug('add a page:' + '(' + RegExp.$1 + ')' + ',(' + RegExp.$2 + ')');
+                    total_num++;
+                    push_pPage(RegExp.$1, RegExp.$2);
+                }
+            }
+
+            debug('SUCCESS/FAIL/TOTAL: ' + success_num + '/' + fail_num + '/' + total_num);
+            /* 分词统计 */
+            reg = /j_d_post_content.*?>([\s\S]*?)</g;
+            while(reg.exec(body)){
+                word_static(RegExp.$1);
+            }
+            if(queue.pPage.length > 0){
+                _run(callback);
+            }else{
+                debug('OVER! SUCCESS/FAIL/TOTAL: ' + success_num + '/' + fail_num + '/' + total_num);
+                callback();
+            }
+        })
+    })()
+}
+
+/**
+* 分词统计
+*/
+function word_static(text){
+    /* 折中处理，先根据字符串非中文字符进行切割，然后长度超过50的字符串分割处理 */
+    var r = [];
+    var str_tmp = text.replace(/(<br>)|(<img.+?>)|[ ]/g,',').split(/[^\u4e00-\u9fa5]+/);
+    while(str_tmp.length > 0){
+        var text_temp = str_tmp.pop();
+        if(text_temp.match(/[\u4e00-\u9fa5]{2,}/)){//长度超过2才进行分词
+            do {
+                r.unshift(text_temp.substring(0, 50));
+                text_temp = text_temp.substring(50);
+            }while(text_temp.length > 50);
+        }
+    }
+
+    while(r.length > 0){
+        var txt = r.pop();
+
+        var result = segment.doSegment(txt, {
+            stripPunctuation:true,
+        });
+
+        for(let k=0; k<result.length; k++){
+            /* 去除单字符和纯数字和数量词 */
+            if(    result[k].w.length < 2
+                || result[k].w.match(/^\d+$/)
+                || result[k].p === 0x200000) continue;
+                word[result[k].w] = word[result[k].w] ? word[result[k].w]+1 : 1;
+        }
+    }
+}
+
