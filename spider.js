@@ -1,5 +1,6 @@
 "use strict";
 var debug = require('debug')('spider');
+var fs = require('fs');
 var request = require('request');
 var Segment = require('segment');
 var segment = new Segment();
@@ -18,17 +19,15 @@ segment
 ;
 
 
-//push栈操作, unshift队列操作
 //定义队列
 var queue = {
     kwPage: [], //贴吧翻页队列
     pPage: [], //翻页贴子队列
 };
-
+//配置
 var cfg = {};
-
+//统计词数
 var word = {};
-
 
 run();
 
@@ -44,13 +43,20 @@ function run(){
         }
     }
     grab_p_url(function(){
-        // console.log(queue);
         grab_p_word(function(){
             /* 排序 */
             var wordIndex = Object.keys(word).sort(function(a,b){return word[b]-word[a]});
             var sortedWord = {};
             for(let i=0; i<wordIndex.length; i++){
                 sortedWord[wordIndex[i]] = word[wordIndex[i]];
+            }
+            if(cfg.save_path && cfg.save_path !== ''){
+                var file_out = {
+                    generated: (new Date()).getTime(),
+                    kw: cfg.kw,
+                    data: sortedWord,
+                };
+                fs.writeFileSync(cfg.save_path, JSON.stringify(file_out));
             }
             console.log(JSON.stringify(sortedWord));
         });
@@ -65,10 +71,15 @@ function setArgument(){
         return false;
     }
     for(let i=0; i<args.length; i+=2){
-        if(args[i] == 'kw'){
+        if(args[i] === 'kw'){
             cfg[args[i]] = [args[i+1]];
-        }else{
+        }else if(args[i] === 'pMaxPage'||
+            args[i] === 'kwMaxPage'||
+            args[i] === 'requestDelay'||
+            args[i] === 'timeout'){
             cfg[args[i]] = parseInt(args[i+1]);
+        }else{
+            cfg[args[i]] = args[i+1];
         }
     }
     return true;
@@ -105,11 +116,10 @@ function grab_p_url(callback){
         (function(url){
             setTimeout(function(){
                 (function (url){
-                    request(url, {timeout: cfg.timeout }, function(err, httpRes, body){
+                    request(url, { timeout: cfg.timeout }, function(err, httpRes, body){
                         left--;
                         if(err){
                             fail_num++;
-                            // console.log(err);
                         }
                         var reg = /<a href="\/p\/(\d+)/g;
                         while(reg.exec(body)){
@@ -127,7 +137,6 @@ function grab_p_url(callback){
 }
 
 
-
 /**
 * 抓取贴子内页队列的翻页链接并加入pPage队列
 * 和post_content的每层楼的贴子内容并分词进行统计
@@ -139,7 +148,7 @@ function grab_p_word(callback){
     var cnt = 0;
     (function _run(){
         var url = queue.pPage.pop();
-        request(url, {timeout: cfg.timeout }, function(err, httpRes, body){
+        request(url, { timeout: cfg.timeout }, function(err, httpRes, body){
             if(err){
                 fail_num++;
                 debug(err);
@@ -159,9 +168,10 @@ function grab_p_word(callback){
 
             debug('SUCCESS/FAIL/TOTAL: ' + success_num + '/' + fail_num + '/' + total_num);
             /* 分词统计 */
-            reg = /j_d_post_content.*?>([\s\S]*?)</g;
+            reg = /<div id="post_content_\d+".+?>([\s\S]+?)<\/div>/g;
             while(reg.exec(body)){
-                word_static(RegExp.$1);
+                //去掉多余标签
+                word_static(RegExp.$1.replace(/<\/?.+?>/g, ''));
             }
             if(queue.pPage.length > 0){
                 _run(callback);
