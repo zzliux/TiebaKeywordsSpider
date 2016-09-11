@@ -1,7 +1,10 @@
 ## 贴吧关键词爬虫
 
-队列爬虫
+[DEMO](http://source.zzliux.cn/TiebaKeywords/demo.html)
+
+队列爬虫  
 爬取单层楼后会根据非中文字符进行分割，一个分割块内的多个关键词仅统计一次
+
 
 ### 配置
 ```js
@@ -14,8 +17,10 @@ module.exports = {
 }
 ```
 
+
 ### 安装
 > npm install
+
 
 ### 运行
 > node spider
@@ -26,3 +31,9 @@ module.exports = {
 #### 运行效果
 可能等待时间会非常久
 ![](img/screenshoot-1.jpg)
+
+
+### crontab
+可以通过定时任务来执行指令爬贴吧，输出文件到站点的静态文件的目录下
+
+值得注意的是node指令要使用绝对路径，不然可能会报无该指令的错误

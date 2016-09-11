@@ -57,8 +57,9 @@ function run(){
                     data: sortedWord,
                 };
                 fs.writeFileSync(cfg.save_path, JSON.stringify(file_out));
+            }else{
+                console.log(JSON.stringify(sortedWord));
             }
-            console.log(JSON.stringify(sortedWord));
         });
     });
 }
@@ -187,16 +188,16 @@ function grab_p_word(callback){
 * 分词统计
 */
 function word_static(text){
-    /* 折中处理，先根据字符串非中文字符进行切割，然后长度超过50的字符串分割处理 */
+    /* 折中处理，先根据字符串非中文字符进行切割，然后长度超过20的字符串分割处理 */
     var r = [];
     var str_tmp = text.replace(/(<br>)|(<img.+?>)|[ ]/g,',').split(/[^\u4e00-\u9fa5]+/);
     while(str_tmp.length > 0){
         var text_temp = str_tmp.pop();
         if(text_temp.match(/[\u4e00-\u9fa5]{2,}/)){//长度超过2才进行分词
-            do {
-                r.unshift(text_temp.substring(0, 50));
-                text_temp = text_temp.substring(50);
-            }while(text_temp.length > 50);
+            do {//太长的话分词会卡死，直接按长度20来分
+                r.unshift(text_temp.substring(0, 20));
+                text_temp = text_temp.substring(20);
+            }while(text_temp.length > 20);
         }
     }
 
