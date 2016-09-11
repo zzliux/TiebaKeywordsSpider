@@ -1,1 +1,0 @@
-* */1 * * * node /root/TiebaKeywordsSpider/spider kw 湖南商学院 timeout 2000 save_path /root/xblog/public/TiebaKeywords/湖南商学院.json
