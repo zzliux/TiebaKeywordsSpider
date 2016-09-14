@@ -28,6 +28,8 @@ var queue = {
 var cfg = {};
 //统计词数
 var word = {};
+//detail
+var total_num, fail_num, success_num;
 
 run();
 
@@ -42,6 +44,7 @@ function run(){
             push_kwPage(encodeURI(cfg.kw[i]), j*50);
         }
     }
+    var startTime = (new Date()).getTime();
     grab_p_url(function(){
         grab_p_word(function(){
             /* 排序 */
@@ -50,15 +53,21 @@ function run(){
             for(let i=0; i<wordIndex.length; i++){
                 sortedWord[wordIndex[i]] = word[wordIndex[i]];
             }
+            var file_out = {
+                generated: (new Date()).getTime(),
+                cfg: cfg,
+                exeTime: (new Date()).getTime() - startTime,
+                detail: {
+                    success_num: success_num,
+                    fail_num: fail_num,
+                    total_num: total_num,
+                },
+                data: sortedWord,
+            };
             if(cfg.save_path && cfg.save_path !== ''){
-                var file_out = {
-                    generated: (new Date()).getTime(),
-                    cfg: cfg,
-                    data: sortedWord,
-                };
                 fs.writeFileSync(cfg.save_path, JSON.stringify(file_out));
             }else{
-                console.log(JSON.stringify(sortedWord));
+                console.log(JSON.stringify(file_out));
             }
         });
     });
@@ -143,10 +152,9 @@ function grab_p_url(callback){
 * 和post_content的每层楼的贴子内容并分词进行统计
 */
 function grab_p_word(callback){
-    var total_num = queue.pPage.length;
-    var fail_num = 0;
-    var success_num = 0;
-    var cnt = 0;
+    total_num = queue.pPage.length;
+    fail_num = 0;
+    success_num = 0;
     (function _run(){
         var url = queue.pPage.pop();
         request(url, { timeout: cfg.timeout }, function(err, httpRes, body){
@@ -163,7 +171,12 @@ function grab_p_word(callback){
                 if(parseInt(RegExp.$2) <= cfg.pMaxPage){
                     debug('add a page:' + '(' + RegExp.$1 + ')' + ',(' + RegExp.$2 + ')');
                     total_num++;
-                    push_pPage(RegExp.$1, RegExp.$2);
+                    if(queue.pPage.length === 0){/* 如果队列空了就需要重新激活递归 */
+                        push_pPage(RegExp.$1, RegExp.$2);
+                        _run(callback);
+                    }else{/* 队列还有东西的话递归还是会自动执行 */
+                        push_pPage(RegExp.$1, RegExp.$2);
+                    }
                 }
             }
 
@@ -171,18 +184,25 @@ function grab_p_word(callback){
             /* 分词统计 */
             reg = /<div id="post_content_\d+".+?>([\s\S]+?)<\/div>/g;
             while(reg.exec(body)){
-                //去掉多余标签
+                /* 去掉多余标签 */
                 word_static(RegExp.$1.replace(/<\/?.+?>/g, ''));
             }
-            if(queue.pPage.length > 0){
-                _run(callback);
-            }else{
+
+            /* 递归出口 */
+            if(success_num + fail_num === total_num){
                 debug('OVER! SUCCESS/FAIL/TOTAL: ' + success_num + '/' + fail_num + '/' + total_num);
                 callback();
             }
         })
+        /* 递归调用 */
+        setTimeout(function(){
+            if(queue.pPage.length > 0){
+                _run(callback);
+            }
+        }, cfg.requestDelay);
     })()
 }
+
 
 /**
 * 分词统计
