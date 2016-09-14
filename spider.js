@@ -131,7 +131,7 @@ function grab_p_url(callback){
                         if(err){
                             fail_num++;
                         }
-                        var reg = /<a href="\/p\/(\d+)/g;
+                        var reg = /<a href="\/p\/(\d+)".+?"j_th_tit/g;
                         while(reg.exec(body)){
                             push_pPage(RegExp.$1, 1);
                         }
